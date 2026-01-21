@@ -1,0 +1,72 @@
+# Pokemon Showdown Replay Scraper Configuration
+# Copy this file to config.yaml and modify as needed
+
+database:
+  # Path to SQLite database file (created automatically)
+  path: ./data/replays.db
+
+scraping:
+  # Minimum seconds between API requests (be respectful to the server)
+  rate_limit: 1.0
+
+  # Number of replays to fetch per API request (max 51)
+  batch_size: 50
+
+  # Whether to fetch full battle logs by default
+  # Set to false for faster metadata-only scraping
+  fetch_full_log: true
+
+  # Number of retry attempts for failed API requests
+  retry_attempts: 3
+
+  # Seconds to wait between retries
+  retry_delay: 5.0
+
+defaults:
+  # Default minimum ELO filter (0 = no minimum)
+  min_elo: 0
+
+  # Default maximum ELO filter (null = no maximum)
+  max_elo: null
+
+  # Default formats to scrape (empty = all formats)
+  # Example: ["gen9ou", "gen9uu", "gen9randombattle"]
+  formats: []
+
+logging:
+  # Log level: DEBUG, INFO, WARNING, ERROR
+  level: INFO
+
+  # Path to log file (null to disable file logging)
+  file: ./data/scraper.log
+
+
+# ============================================================
+# Example configurations for different use cases:
+# ============================================================
+
+# High-ELO competitive scraping:
+# -----------------------------
+# defaults:
+#   min_elo: 1600
+#   max_elo: null
+#   formats: ["gen9ou", "gen9uu", "gen9ubers"]
+# scraping:
+#   rate_limit: 1.5
+#   fetch_full_log: true
+
+# Fast metadata collection:
+# -------------------------
+# scraping:
+#   rate_limit: 0.5
+#   fetch_full_log: false
+# defaults:
+#   min_elo: 0
+#   formats: ["gen9randombattle"]
+
+# Conservative/polite scraping:
+# -----------------------------
+# scraping:
+#   rate_limit: 2.0
+#   retry_attempts: 5
+#   retry_delay: 10.0
