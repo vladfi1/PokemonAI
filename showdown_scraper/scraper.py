@@ -129,12 +129,13 @@ class ReplayScraper:
                 batch_count += 1
                 job.total_fetched += len(replays)
 
-                # Filter by ELO (client-side)
-                filtered = self._filter_by_elo(replays, job.min_elo, job.max_elo)
+                # Filter by ELO for log fetching only
+                elo_matched = self._filter_by_elo(replays, job.min_elo, job.max_elo)
+                logs_fetched_batch = 0
 
-                # Optionally fetch full logs and save to files
+                # Optionally fetch full logs for ELO-matched replays
                 if fetch_logs:
-                    for replay in filtered:
+                    for replay in elo_matched:
                         if not self.running:
                             break
                         try:
@@ -143,11 +144,12 @@ class ReplayScraper:
                                 _, log_size = self.log_storage.save(replay.id, replay.format_id, log)
                                 replay.log_fetched = True
                                 replay.log_size = log_size
+                                logs_fetched_batch += 1
                         except ShowdownAPIError:
                             pass  # Skip failed log fetches
 
-                # Store replays
-                for replay in filtered:
+                # Store ALL replays (not just ELO-filtered)
+                for replay in replays:
                     if self.db.insert_replay(replay):
                         total_new += 1
                         job.total_stored += 1
@@ -159,11 +161,14 @@ class ReplayScraper:
                 self.db.update_job(job)
 
                 # Progress update
-                match_rate = format_percentage(len(filtered), len(replays))
                 before_date = format_timestamp(job.last_timestamp) if job.last_timestamp else "now"
+                log_info = ""
+                if fetch_logs:
+                    elo_rate = format_percentage(len(elo_matched), len(replays))
+                    log_info = f", {logs_fetched_batch} logs ({elo_rate} ELO match)"
                 self._log_progress(
-                    f"Batch {batch_count}: {len(replays)} fetched, {len(filtered)} matched ({match_rate}), "
-                    f"{total_new} new. Total: {format_number(job.total_stored)}. Before: {before_date}"
+                    f"Batch {batch_count}: {len(replays)} fetched, {total_new} new{log_info}. "
+                    f"Total: {format_number(job.total_stored)}. Before: {before_date}"
                 )
 
         except Exception as e:
@@ -322,26 +327,47 @@ class LogFetcher:
         else:
             print(message)
 
-    def run(self, limit: Optional[int] = None) -> int:
+    def run(
+        self,
+        limit: Optional[int] = None,
+        min_elo: Optional[int] = None,
+        max_elo: Optional[int] = None,
+        format_id: Optional[str] = None,
+    ) -> int:
         """
         Fetch logs for replays without them.
 
         Args:
             limit: Maximum number of logs to fetch. If None, runs continuously.
+            min_elo: Minimum ELO rating filter.
+            max_elo: Maximum ELO rating filter.
+            format_id: Format filter (e.g., 'gen9ou').
 
         Returns:
             Number of logs fetched.
         """
-        # Get total count of replays needing logs
-        stats = self.db.get_replay_stats()
-        total_without_logs = stats["without_logs"]
+        # Get total count of replays needing logs (with filters)
+        total_without_logs = self.db.count_replays_without_logs(min_elo=min_elo, max_elo=max_elo, format_id=format_id)
 
         if total_without_logs == 0:
-            self._log_progress("No replays need logs")
+            filter_info = ""
+            if format_id:
+                filter_info += f" format={format_id}"
+            if min_elo:
+                filter_info += f" ELO >= {min_elo}"
+            self._log_progress("No replays need logs" + (f" ({filter_info.strip()})" if filter_info else ""))
             return 0
 
         target = min(limit, total_without_logs) if limit else total_without_logs
-        self._log_progress(f"Fetching logs: {total_without_logs} replays need logs" + (f", limit {limit}" if limit else ""))
+        filter_parts = []
+        if format_id is not None:
+            filter_parts.append(f"format={format_id}")
+        if min_elo is not None:
+            filter_parts.append(f"ELO >= {min_elo}")
+        if max_elo is not None:
+            filter_parts.append(f"ELO <= {max_elo}")
+        filter_info = f" ({', '.join(filter_parts)})" if filter_parts else ""
+        self._log_progress(f"Fetching logs: {total_without_logs} replays need logs{filter_info}" + (f", limit {limit}" if limit else ""))
 
         total_fetched = 0
         batch_size = 10
@@ -351,7 +377,7 @@ class LogFetcher:
             if current_limit <= 0:
                 break
 
-            replays = self.db.get_replays_without_logs(current_limit)
+            replays = self.db.get_replays_without_logs(current_limit, min_elo=min_elo, max_elo=max_elo, format_id=format_id)
             if not replays:
                 if limit is None:
                     self._log_progress("No replays need logs, waiting...")

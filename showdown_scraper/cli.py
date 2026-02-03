@@ -288,16 +288,38 @@ def status(ctx: click.Context, job_name: Optional[str]):
 
 
 @cli.command("fetch-logs")
+@click.option("--format", "-f", "format_id", help="Filter by format (e.g., gen9ou). Uses config default if not specified.")
 @click.option("--limit", "-l", type=int, default=None, help="Maximum number of logs to fetch.")
+@click.option("--min-elo", type=int, default=None, help="Minimum ELO rating filter.")
+@click.option("--max-elo", type=int, default=None, help="Maximum ELO rating filter.")
 @click.pass_context
-def fetch_logs(ctx: click.Context, limit: int):
+def fetch_logs(ctx: click.Context, format_id: Optional[str], limit: int, min_elo: Optional[int], max_elo: Optional[int]):
     """Fetch battle logs for replays that don't have them."""
     config = get_config(ctx)
     db = get_db(ctx)
     log_storage = get_log_storage(ctx)
 
+    # Apply config defaults if not specified
+    if format_id is None:
+        format_id = config.defaults.format
+    if min_elo is None:
+        min_elo = config.defaults.min_elo if config.defaults.min_elo > 0 else None
+    if max_elo is None:
+        max_elo = config.defaults.max_elo
+
+    # Normalize format ID if provided
+    if format_id:
+        format_id = parse_format_id(format_id)
+
+    # Print filters
+    click.echo("Fetching logs with filters:")
+    click.echo(f"  Format: {format_id or 'all'}")
+    click.echo(f"  ELO: >= {min_elo or 0}" + (f", <= {max_elo}" if max_elo else ""))
+    if limit:
+        click.echo(f"  Limit: {limit}")
+
     fetcher = LogFetcher(config, db, log_storage)
-    count = fetcher.run(limit=limit)
+    count = fetcher.run(limit=limit, min_elo=min_elo, max_elo=max_elo, format_id=format_id)
     click.echo(f"Fetched {count} logs.")
 
 

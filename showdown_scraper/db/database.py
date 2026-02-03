@@ -144,19 +144,74 @@ class Database:
         self.conn.commit()
         return cursor.rowcount > 0
 
-    def get_replays_without_logs(self, limit: int = 100) -> list[Replay]:
+    def get_replays_without_logs(
+        self,
+        limit: int = 100,
+        min_elo: Optional[int] = None,
+        max_elo: Optional[int] = None,
+        format_id: Optional[str] = None,
+    ) -> list[Replay]:
         """Get replays that don't have logs fetched yet."""
+        conditions = ["log_fetched = 0"]
+        params = []
+
+        if format_id is not None:
+            conditions.append("format_id = ?")
+            params.append(format_id)
+
+        if min_elo is not None:
+            conditions.append("rating >= ?")
+            params.append(min_elo)
+
+        if max_elo is not None:
+            conditions.append("rating <= ?")
+            params.append(max_elo)
+
+        where_clause = " AND ".join(conditions)
+        params.append(limit)
+
         cursor = self.conn.cursor()
         cursor.execute(
-            """
+            f"""
             SELECT * FROM replays
-            WHERE log_fetched = 0
+            WHERE {where_clause}
             ORDER BY upload_time DESC
             LIMIT ?
             """,
-            (limit,),
+            params,
         )
         return [self._row_to_replay(dict(row)) for row in cursor.fetchall()]
+
+    def count_replays_without_logs(
+        self,
+        min_elo: Optional[int] = None,
+        max_elo: Optional[int] = None,
+        format_id: Optional[str] = None,
+    ) -> int:
+        """Count replays that don't have logs fetched yet."""
+        conditions = ["log_fetched = 0"]
+        params = []
+
+        if format_id is not None:
+            conditions.append("format_id = ?")
+            params.append(format_id)
+
+        if min_elo is not None:
+            conditions.append("rating >= ?")
+            params.append(min_elo)
+
+        if max_elo is not None:
+            conditions.append("rating <= ?")
+            params.append(max_elo)
+
+        where_clause = " AND ".join(conditions)
+
+        cursor = self.conn.cursor()
+        cursor.execute(
+            f"SELECT COUNT(*) FROM replays WHERE {where_clause}",
+            params,
+        )
+        return cursor.fetchone()[0]
 
     def query_replays(
         self,
